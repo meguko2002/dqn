@@ -5,6 +5,7 @@ import agent
 
 ENV = 'CartPole-v0'
 NUM_EPISODES = 500
+SHOW_EVERY = 50
 MAX_STEPS = 200
 
 
@@ -12,20 +13,22 @@ class Environment:
     def __init__(self):
         self.env =gym.make(ENV)
         self.num_states = self.env.observation_space.shape[0]
-        self.num_actions = self.env.action_space.n
-
+        self.num_actions = self.env.action_space.n  # env.action_space.nでactionの種類数(=2)
         self.agent = agent.Agent(self.num_states, self.num_actions)
 
     def run(self):
         episode_10_list = np.zeros(10)
-        complete_episode =0
+        complete_episode = 0
         episode_final =False
+        complete_flag = False
         for episode in range(NUM_EPISODES):
             observation = self.env.reset()
             state = observation
-            state= torch.from_numpy(state).type(torch.FloatTensor)
+            state = torch.from_numpy(state).type(torch.FloatTensor)
             state = torch.unsqueeze(state, 0)
             for step in range(MAX_STEPS):
+                if episode % SHOW_EVERY == 0 or complete_flag is True:
+                    self.env.render ()
                 action = self.agent.get_action(state, episode)
                 observation_next, _, done, _ = self.env.step(action.item())
                 if done:
@@ -34,9 +37,11 @@ class Environment:
                     if step < 195:
                         reward = torch.FloatTensor([-1.0])
                         complete_episode = 0
-                    else:
+                        complete_flag = False
+                    else:               # episode complete
                         reward = torch.FloatTensor([1.0])
                         complete_episode = complete_episode +1
+                        complete_flag = True
                 else:
                     reward = torch.FloatTensor([0.0])
                     state_next = observation_next
@@ -57,6 +62,7 @@ class Environment:
             if complete_episode >= 10:
                 print('10回連続成功')
                 episode_final = True
+                self.env.close()
 
 cartpole_env = Environment()
 cartpole_env.run()
