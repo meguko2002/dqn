@@ -9,15 +9,18 @@ import time
 style.use ( "ggplot" )
 
 SIZE = 10
-HM_EPISODES = 25000
+
+HM_EPISODES = 20000
 MOVE_PENALTY = 1
 ENEMY_PENALTY = 300
 FOOD_REWARD = 25
-epsilon = 0.5
-ESP_DECAY = 0.9999
-SHOW_EVERY = 1000
+epsilon = 0.1
+EPS_DECAY = 0.9998
+SHOW_EVERY = 500
 
-start_q_table = None
+# start_q_table = None
+start_q_table = 'qtable-1580739217.pickle'
+
 
 LEARNING_RATE = 0.1
 DISCOUNT = 0.95
@@ -71,7 +74,98 @@ class Blob:
         elif self.y > SIZE - 1:
             self.y = SIZE - 1
 
-player = Blob()
-food = Blob()
-enemy = Blob()
+if start_q_table is None:
+    # initialize the q-table#
+    q_table = {}
+    for i in range(-SIZE+1, SIZE):
+        for ii in range(-SIZE+1, SIZE):
+            for iii in range(-SIZE+1, SIZE):
+                    for iiii in range(-SIZE+1, SIZE):
+                        q_table[((i, ii), (iii, iiii))] = [np.random.uniform(-5, 0) for i in range(4)]
+else:
+    with open(start_q_table, "rb") as f:
+        q_table = pickle.load(f)
+ # can look up from Q-table with: print(q_table[((-9, -2), (3, 9))]) for example
 
+episode_rewards = []
+
+for episode in range(HM_EPISODES):
+    player = Blob()
+    food = Blob()
+    enemy = Blob()
+
+    print(episode)
+    if episode % SHOW_EVERY == 0:
+        print(f"on #{episode}, epsilon is {epsilon}")
+        print(f"{SHOW_EVERY} ep mean: {np.mean(episode_rewards[-SHOW_EVERY:])}")
+        show = True
+    else:
+        show = False
+
+    episode_reward = 0
+    for i in range(200):
+        obs = (player-food, player-enemy)
+        # print(obs)
+        if np.random.random() > epsilon:
+            # GET THE ACTION
+            action = np.argmax(q_table[obs])
+        else:
+            action = np.random.randint(0, 4)
+        # Take the action!
+        player.action(action)
+
+        #### MAYBE ###
+        #enemy.move()
+        #food.move()
+        ##############
+
+        if player.x == enemy.x and player.y == enemy.y:
+            reward = -ENEMY_PENALTY
+        elif player.x == food.x and player.y == food.y:
+            reward = FOOD_REWARD
+        else:
+            reward = -MOVE_PENALTY
+        ## NOW WE KNOW THE REWARD, LET'S CALC YO
+        # first we need to obs immediately after the move.
+        new_obs = (player-food, player-enemy)  # new observation
+        max_future_q = np.max(q_table[new_obs])  # max Q value for this new obs
+        current_q = q_table[obs][action]  # current Q for our chosen action
+
+        if reward == FOOD_REWARD:
+            new_q = FOOD_REWARD
+        else:
+            new_q = (1 - LEARNING_RATE) * current_q + LEARNING_RATE * (reward + DISCOUNT * max_future_q)
+
+        q_table[obs][action] = new_q
+
+        if show:
+            env = np.zeros((SIZE, SIZE, 3), dtype=np.uint8)  # starts an rbg of our size
+            env[food.x][food.y] = d[FOOD_N]  # sets the food location tile to green color
+            env[player.x][player.y] = d[PLAYER_N]  # sets the player tile to blue
+            env[enemy.x][enemy.y] = d[ENEMY_N]  # sets the enemy location to red
+            img = Image.fromarray(env, 'RGB')  # reading to rgb. Apparently. Even tho color definitions are bgr. ???
+            img = img.resize((300, 300))  # resizing so we can see our agent in all its glory.
+            cv2.imshow("image", np.array(img))  # show it!
+            if reward == FOOD_REWARD or reward == -ENEMY_PENALTY:  # crummy code to hang at the end if we reach abrupt end for good reasons or not.
+                if cv2.waitKey(500) & 0xFF == ord('q'):
+                    break
+            else:
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+        episode_reward += reward
+        if reward == FOOD_REWARD or reward == -ENEMY_PENALTY:
+            break
+
+    episode_rewards.append(episode_reward)
+    epsilon *= EPS_DECAY
+
+moving_avg = np.convolve(episode_rewards, np.ones((SHOW_EVERY,))/SHOW_EVERY, mode='valid')
+
+plt.plot([i for i in range(len(moving_avg))], moving_avg)
+plt.ylabel(f"Reward {SHOW_EVERY}ma")
+plt.xlabel("episode #")
+plt.show()
+
+with open(f"qtable-{int(time.time())}.pickle", "wb") as f:
+    pickle.dump(q_table, f)
